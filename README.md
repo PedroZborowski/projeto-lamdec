@@ -1,9 +1,3 @@
-Com certeza. Um `README.md` é a vitrine do seu projeto. Um template bem estruturado não só impressiona, mas também facilita a sua vida, permitindo que você preencha as seções à medida que avança.
-
-A seguir, um template completo e profissional, formatado em Markdown, com comentários \`\` que te guiam sobre o que escrever. Esses comentários não aparecerão no README final. Copie e cole isso no arquivo `README.md` na raiz do seu projeto.
-
------
-
 # **Desafio Técnico LAMDEC - Análise de Dívida Ativa**
 
 [](https://shields.io)
