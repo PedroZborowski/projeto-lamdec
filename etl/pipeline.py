@@ -39,6 +39,7 @@ def load_data():
             'idNaturezadivida': 'id_natureza',
             'nomnaturezadivida': 'descricao_natureza'
         })
+        df_naturezas.drop_duplicates(subset=["id_natureza"], keep = 'first', inplace = True)
         df_naturezas.to_sql('dim_naturezas', con=engine, if_exists='append', index=False)
         print("'dim_naturezas' carregada.")
 
@@ -50,6 +51,7 @@ def load_data():
             'nomSituacaoCDA': 'descricao_situacao',
             'tipoSituacao': 'tipo_situacao'
         })
+        df_situacoes.drop_duplicates(subset=["id_situacao"], keep = 'first', inplace = True)
         df_situacoes.to_sql('dim_situacoes', con=engine, if_exists='append', index=False)
         print("'dim_situacoes' carregada.")
 
@@ -62,18 +64,31 @@ def load_data():
         df_pj = pd.read_csv('data/007.csv')
         df_pj['tipo_pessoa'] = 'PJ'
         df_pj.rename(columns={'idpessoa': 'id_devedor', 'descNome': 'nome', 'numCNPJ': 'cpf_cnpj'}, inplace=True)
-        
+
         df_devedores = pd.concat([df_pf, df_pj], ignore_index=True)
         df_devedores = df_devedores[['id_devedor', 'nome', 'cpf_cnpj', 'tipo_pessoa']]
-        df_devedores.to_sql('dim_devedores', con=engine, if_exists='append', index=False)
+        df_devedores.drop_duplicates(subset=["id_devedor"], keep = 'first', inplace = True)
+
+        indices_duplicados = df_devedores.duplicated(subset=['cpf_cnpj'], keep='first') & df_devedores['cpf_cnpj'].notna()
+        df_devedores.loc[indices_duplicados, 'cpf_cnpj'] = None
+
+        # Junta novamente os devedores com CPF/CNPJ únicos e os devedores sem documento
+        df_devedores_final = df_devedores[['id_devedor', 'nome', 'cpf_cnpj', 'tipo_pessoa']]
+        df_devedores_final.to_sql('dim_devedores', con=engine, if_exists='append', index=False)
         print("'dim_devedores' carregada.")
-        
         print("Carregando 'fatos_cdas'...")
         df_fatos_base = pd.read_csv('data/001.csv')
         df_fatos_prob = pd.read_csv('data/004.csv')
 
-
         df_fatos = pd.merge(df_fatos_base, df_fatos_prob, on='numCDA')
+
+        df_fatos['datCadastramento'] = pd.to_datetime(df_fatos['datCadastramento'], errors='coerce')
+        df_fatos['DatSituacao'] = pd.to_datetime(df_fatos['DatSituacao'], errors='coerce')
+
+        mask = df_fatos['datCadastramento'].dt.year < 1980
+
+        df_fatos.loc[mask, 'datCadastramento'] = pd.to_datetime('1980-01-01 00:00:00.000') #Valor padrão, já que o cadastro em 1900 não faz sentido
+        #e provavelmente se trata de um ruído na transmissão daqueles dados, além de causar um erro no SQL.
         
         df_fatos = df_fatos.rename(columns={
             'numCDA': 'num_cda',
@@ -85,6 +100,7 @@ def load_data():
             'idNaturezaDivida': 'fk_natureza',
             'codSituacaoCDA': 'fk_situacao'
         })
+        df_fatos.drop_duplicates(subset=["num_cda"], keep = 'first', inplace = True)
 
         df_fatos_final = df_fatos[['num_cda', 'ano_inscricao', 'data_cadastramento', 'data_situacao', 'valor_saldo', 'prob_recuperacao', 'fk_natureza', 'fk_situacao']]
         df_fatos_final.to_sql('fatos_cdas', con=engine, if_exists='append', index=False)
@@ -96,6 +112,15 @@ def load_data():
             'numCDA': 'fk_cda',
             'idPessoa': 'fk_devedor'
         })
+
+        cdas_validas = df_fatos_final['num_cda'].unique()
+        devedores_validos = df_devedores_final['id_devedor'].unique()
+
+        df_juncao = df_juncao[
+            df_juncao['fk_cda'].isin(cdas_validas) &
+            df_juncao['fk_devedor'].isin(devedores_validos)
+        ].drop_duplicates()
+
         df_juncao.to_sql('jun_cdas_devedores', con=engine, if_exists='append', index=False)
         print("'jun_cdas_devedores' carregada.")
 
@@ -105,5 +130,4 @@ def load_data():
         print(f"Ocorreu um erro durante o pipeline de ETL: {e}")
         sys.exit(1)
 
-if __name__ == "__main__":
-    load_data()
+load_data()
