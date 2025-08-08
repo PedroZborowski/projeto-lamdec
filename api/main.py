@@ -329,14 +329,29 @@ def detalhes_devedor(
 ):
     query_str = """
         SELECT
-            f.ano_inscricao AS ano,
-            COUNT(*) AS Quantidade
+            d.descricao_natureza AS name,
+            (COUNT(CASE 
+                WHEN s.descricao_situacao LIKE 'Cobrança%' OR s.descricao_situacao IN ('Parcelada', 'Leilão', 'Arrematação', 'Negociada', 'Parcelamento Irregular') 
+                THEN 1 
+             END) * 100.0 / COUNT(*)) AS `Em cobranca`,
+            (COUNT(CASE 
+                WHEN s.descricao_situacao LIKE 'Cancelada%' OR s.descricao_situacao = 'Migracao Cancelamento'
+                THEN 1 
+             END) * 100.0 / COUNT(*)) AS `Cancelada`,
+            (COUNT(CASE 
+                WHEN s.descricao_situacao LIKE 'Paga%' OR s.descricao_situacao = 'Migracao Pagos'
+                THEN 1 
+             END) * 100.0 / COUNT(*)) AS `Quitada`
         FROM 
             fatos_cdas f
+        JOIN 
+            dim_naturezas d ON f.fk_natureza = d.id_natureza
+        JOIN 
+            dim_situacoes s ON f.fk_situacao = s.id_situacao
         GROUP BY 
-            f.ano_inscricao
+            d.descricao_natureza
         ORDER BY
-            f.ano_inscricao;
+            d.descricao_natureza;
     """
 
     try:
