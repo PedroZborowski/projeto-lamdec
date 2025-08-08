@@ -3,3 +3,4 @@ uvicorn[standard]
 pandas
 SQLAlchemy
 mysql-connector-python
+python-dotenv

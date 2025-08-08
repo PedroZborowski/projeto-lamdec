@@ -9,6 +9,9 @@ import pandas as pd
 from sqlalchemy import create_engine
 import os
 import sys
+from dotenv import load_dotenv
+
+load_dotenv()
 
 def load_data():
     """
