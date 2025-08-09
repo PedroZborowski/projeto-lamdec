@@ -4,14 +4,13 @@ from fastapi.exceptions import ResponseValidationError
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
+import pandas as pd
 import os
 from typing import List, Optional
 from datetime import date
 from dotenv import load_dotenv
 
 load_dotenv()
-
-# CONFIGURAÇÃO E CONEXÃO COM O BANCO DE DADOS
 
 # Carrega as variáveis de ambiente
 DB_USER = os.getenv('DB_USER')
@@ -22,11 +21,9 @@ DB_PORT = os.getenv('DB_PORT')
 
 DATABASE_URL = f'mysql+mysqlconnector://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}'
 
-# Cria o "motor" de conexão do SQLAlchemy
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Função para obter uma sessão do banco de dados para cada requisição
 def get_db():
     db = SessionLocal()
     try:
@@ -47,7 +44,7 @@ class CdaResponse(BaseModel):
 
     # Configuração para permitir que o Pydantic leia dados de objetos que não são dicts (como os resultados do SQLAlchemy)
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class DetalhesResponse(BaseModel):
     name: str
@@ -55,7 +52,7 @@ class DetalhesResponse(BaseModel):
     cpf_cnpj: Optional[str] = Field(alias="CPF/CNPJ")
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class DistribuicaoResponse(BaseModel):
     name: str
@@ -64,14 +61,14 @@ class DistribuicaoResponse(BaseModel):
     Quitada: float
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class InscricoesResponse(BaseModel):
     ano: int
     Quantidade: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class MontanteResponse(BaseModel):
     Percentual: int
@@ -82,21 +79,21 @@ class MontanteResponse(BaseModel):
     ITBI: float
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class QtdeResponse(BaseModel):
     name: str
     Quantidade: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class SaldoResponse(BaseModel):
     name: str
     Saldo: float
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # APLICAÇÃO FASTAPI E ENDPOINT
 
@@ -247,7 +244,8 @@ def search_cda(
 
 @app.get("/cda/detalhes_devedor", response_model=List[DetalhesResponse])
 def detalhes_devedor(
-    db: Session = Depends(get_db)
+    cda: Optional[str] = None,    #Por mais que não esteja especificado no enunciado, detalhes_devedor parece
+    db: Session = Depends(get_db) #se referir a um devedor especifico, portanto, faria sentido poder achá-lo a partir de seu CDA.
 ):
     #DISTINCT para não repetir devedores.
     query_str = """
@@ -258,8 +256,11 @@ def detalhes_devedor(
         FROM jun_cdas_devedores j
         JOIN dim_devedores d ON j.fk_devedor = d.id_devedor
     """
+    if cda:
+        query_str += " WHERE j.fk_cda = :num_cda"
+
     try:
-        results = db.execute(text(query_str)).fetchall()
+        results = db.execute(text(query_str), {"num_cda": cda}).fetchall()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao consultar o banco de dados: {e}")
     return results
@@ -268,6 +269,9 @@ def detalhes_devedor(
 def detalhes_devedor(
     db: Session = Depends(get_db)
 ):
+    #A lógica desse query é setar como 1 e passar para o count, que por padrão ignora os valores Null (que os condicionais
+    #atribuem automaticamente quando a condição não é cumprida), e, portanto, só conta nas colunas especificadas. *100/total é simplesmente
+    #conversão para porcentagem.
     query_str = """
         SELECT
             d.descricao_natureza AS name,
@@ -324,40 +328,90 @@ def detalhes_devedor(
     return results
 
 @app.get("/resumo/montante_acumulado", response_model=List[MontanteResponse])
-def detalhes_devedor(
+def montante_acumulado(
     db: Session = Depends(get_db)
 ):
+    #Essa query prepara uma tabela para ser ainda mais processada com Pandas e gerar o resultado esperado.
+    #Primeiro, agrupamos as descricao_natureza de acordo (englobamos todos os IPTU em um por exemplo).
+    #Depois, usamos NTILE(100) para criar 100 partições nos grupos especificados, ordenados por saldo (assim,
+    #cada partição é um percentil.
     query_str = """
         SELECT
-            d.descricao_natureza AS name,
-            (COUNT(CASE 
-                WHEN s.descricao_situacao LIKE 'Cobrança%' OR s.descricao_situacao IN ('Parcelada', 'Leilão', 'Arrematação', 'Negociada', 'Parcelamento Irregular') 
-                THEN 1 
-             END) * 100.0 / COUNT(*)) AS `Em cobranca`,
-            (COUNT(CASE 
-                WHEN s.descricao_situacao LIKE 'Cancelada%' OR s.descricao_situacao = 'Migracao Cancelamento'
-                THEN 1 
-             END) * 100.0 / COUNT(*)) AS `Cancelada`,
-            (COUNT(CASE 
-                WHEN s.descricao_situacao LIKE 'Paga%' OR s.descricao_situacao = 'Migracao Pagos'
-                THEN 1 
-             END) * 100.0 / COUNT(*)) AS `Quitada`
+            CASE
+                WHEN d.descricao_natureza LIKE 'IPTU%' THEN 'IPTU'
+                WHEN d.descricao_natureza LIKE 'ISS%' THEN 'ISS'
+                WHEN d.descricao_natureza LIKE 'Taxa%' THEN 'Taxas'
+                WHEN d.descricao_natureza LIKE 'Multa%' THEN 'Multas'
+                WHEN d.descricao_natureza LIKE 'ITBI%' THEN 'ITBI'
+            END AS tipo_tributo,
+            f.valor_saldo,
+            NTILE(100) OVER (PARTITION BY 
+            CASE
+                WHEN d.descricao_natureza LIKE 'IPTU%' THEN 'IPTU'
+                WHEN d.descricao_natureza LIKE 'ISS%' THEN 'ISS'
+                WHEN d.descricao_natureza LIKE 'Taxa%' THEN 'Taxas'
+                WHEN d.descricao_natureza LIKE 'Multa%' THEN 'Multas'
+                WHEN d.descricao_natureza LIKE 'ITBI%' THEN 'ITBI'
+            END
+            ORDER BY f.valor_saldo) AS percentil
         FROM 
             fatos_cdas f
         JOIN 
             dim_naturezas d ON f.fk_natureza = d.id_natureza
-        JOIN 
-            dim_situacoes s ON f.fk_situacao = s.id_situacao
-        GROUP BY 
-            d.descricao_natureza
-        ORDER BY
-            d.descricao_natureza;
+        WHERE 
+            d.descricao_natureza LIKE 'IPTU%' OR
+            d.descricao_natureza LIKE 'ISS%' OR
+            d.descricao_natureza LIKE 'Taxa%' OR
+            d.descricao_natureza LIKE 'Multa%' OR 
+            d.descricao_natureza LIKE 'ITBI%'
     """
 
     try:
-        results = db.execute(text(query_str)).fetchall()
+        df = pd.read_sql(text(query_str), db.bind)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao consultar o banco de dados: {e}")
+
+
+    if df.empty:
+        return []
+
+    #Agrupamos o df por tipo do tributo e calculamos a soma do saldo para cada um
+    total_por_tributo = df.groupby('tipo_tributo')['valor_saldo'].sum()
+
+    #Agrupamos por tipo e percentil e calculamos a soma de cada um. reset_index serve para criar índices novos e facilitar a manipulação.
+    soma_por_percentil = df.groupby(['tipo_tributo', 'percentil'])['valor_saldo'].sum().reset_index()
+
+    #Isso acumula a soma cumulativa (no percentil 1, é o valor ATÉ o 1. no 5, é ATÉ o 5 e assim em diante.)
+    soma_por_percentil['valor_acumulado'] = soma_por_percentil.groupby('tipo_tributo')['valor_saldo'].cumsum()
+
+    #Apply aplica a função lambda em cada linha row. Isso simplesmente calcula o percentual acumulado.
+    soma_por_percentil['percentual_acumulado'] = soma_por_percentil.apply(
+        lambda row: (row['valor_acumulado'] / total_por_tributo[row['tipo_tributo']]) * 100,
+        axis=1
+    )
+
+    #Aqui, filtramos com indexação booleana. A lista de dentro é uma lista de verdadeiros ou falsos, e usar isso para indexar retorna
+    #um DF apenas com as linhas que eram verdadeiras na lista. Usamos isin para checar se estava entre os percentis desejados.
+    percentis_desejados = [1] + list(range(5, 101, 5))
+    df_filtrado = soma_por_percentil[soma_por_percentil['percentil'].isin(percentis_desejados)]
+
+    #pivot_table serve para "pivotear" a tabela. Da maneira como está feito, serve basicamente para
+    #trocar as linhas pelas colunas. O reset_index faz com que o percentil não seja o próprio index e se torne
+    #uma coluna.
+    df_pivot = df_filtrado.pivot_table(
+        index='percentil', 
+        columns='tipo_tributo',
+        values='percentual_acumulado'
+    ).reset_index()
+    
+    df_pivot = df_pivot.rename(columns={'percentil': 'Percentual'})
+
+    for tributo in ['IPTU', 'ISS', 'Taxas', 'Multas', 'ITBI']:
+        if tributo not in df_pivot.columns:
+            df_pivot[tributo] = 0.0
+
+    results = df_pivot.fillna(0.0).to_dict(orient='records')
+
     return results
 
 @app.get("/resumo/quantidade_cdas", response_model=List[QtdeResponse])

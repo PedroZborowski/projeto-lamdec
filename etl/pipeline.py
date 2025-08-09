@@ -37,13 +37,23 @@ def load_data():
 
         # Carregar dim_naturezas
         print("Carregando 'dim_naturezas'...")
-        df_naturezas = pd.read_csv('data/002.csv')
-        df_naturezas = df_naturezas[['idNaturezadivida', 'nomnaturezadivida']].rename(columns={
-            'idNaturezadivida': 'id_natureza',
-            'nomnaturezadivida': 'descricao_natureza'
+        df_naturezas_bruto = pd.read_csv('data/002.csv').rename(columns={
+        'idNaturezadivida': 'id_natureza_antigo', 
+        'nomnaturezadivida': 'descricao_natureza'
         })
-        df_naturezas.drop_duplicates(subset=["id_natureza"], keep = 'first', inplace = True)
-        df_naturezas.to_sql('dim_naturezas', con=engine, if_exists='append', index=False)
+
+        #Isso é feito para remover os valores duplicados que tem em naturezas (mesma natureza com IDS diferentes)
+        df_naturezas_mestra = df_naturezas_bruto.drop_duplicates(subset=['descricao_natureza']).copy()
+        df_naturezas_mestra['id_natureza_novo'] = range(1, len(df_naturezas_mestra) + 1) # Cria novos IDs limpos
+        df_naturezas_final = df_naturezas_mestra[['id_natureza_novo', 'descricao_natureza']].rename(columns={'id_natureza_novo': 'id_natureza'})
+
+        # Cria o mapa de IDs antigos para os novos (para conseguir, mais para a frente, mapear a mesma natureza com ids diferentes para o mesmo id novo.)
+        mapa_de_ids = pd.merge(
+            df_naturezas_bruto,
+            df_naturezas_final,
+            on='descricao_natureza'
+        ).set_index('id_natureza_antigo')['id_natureza'].to_dict()
+        df_naturezas_final.to_sql('dim_naturezas', con=engine, if_exists='append', index=False)
         print("'dim_naturezas' carregada.")
 
         # Carregar dim_situacoes
@@ -83,6 +93,10 @@ def load_data():
         df_fatos_base = pd.read_csv('data/001.csv')
         df_fatos_prob = pd.read_csv('data/004.csv')
 
+        df_fatos_base = pd.read_csv('data/001.csv')
+
+        df_fatos_base['idNaturezaDivida'] = df_fatos_base['idNaturezaDivida'].map(mapa_de_ids)
+
         df_fatos = pd.merge(df_fatos_base, df_fatos_prob, on='numCDA')
 
         df_fatos['datCadastramento'] = pd.to_datetime(df_fatos['datCadastramento'], errors='coerce')
@@ -104,6 +118,8 @@ def load_data():
             'codSituacaoCDA': 'fk_situacao'
         })
         df_fatos.drop_duplicates(subset=["num_cda"], keep = 'first', inplace = True)
+
+        df_fatos = df_fatos[df_fatos['valor_saldo'] >= 0] #Como é uma análise de dívida ativa, não faz sentido a dívida ser negativa. (isso deu problema no cálculo de montante acumulado)
 
         df_fatos_final = df_fatos[['num_cda', 'ano_inscricao', 'data_cadastramento', 'data_situacao', 'valor_saldo', 'prob_recuperacao', 'fk_natureza', 'fk_situacao']]
         df_fatos_final.to_sql('fatos_cdas', con=engine, if_exists='append', index=False)
