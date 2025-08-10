@@ -20,7 +20,8 @@ services:
       - .env
     depends_on: #O ETL só pode ser executado depois de a condição específica do DB ser verdadeira.
       - db
-
+    volumes:
+      - mysql_data:/data/persisted
     #O comando a seguir substitui o padrão especificado no Dockerfile. Ele abre um shell e executa um comando que
     #verifica se a a flag de "já criação" existe. Se não, cria e realiza o ETL. Se sim, pula essa etapa.
     #Sem isso, o ETL tentaria ser realizado a cada criação ou edição nos containers, e o ETL só deve ser realizado
