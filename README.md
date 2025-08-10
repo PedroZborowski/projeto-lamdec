@@ -48,7 +48,7 @@ Siga os passos abaixo para iniciar a aplicação completa:
     cd projeto-lamdec
     ```
 
-2.  **Renomeie e edite o aruqivo .env.example:**
+2.  **Renomeie e edite o arquivo .env.example:**
     As instruções para essa etapa estão dentro do próprio arquivo.
 
 3.  **IMPORTANTE: Cuidado com a porta 3306**
