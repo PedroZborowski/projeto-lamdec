@@ -1,152 +1,156 @@
-# O código é responsável pelo processo ETL ao inserir os dados dos arquivos CSV de entrada no banco de dados.
-# A extração de dados é feita com pd.read_csv.
-# O tratamento é a etapa mais longa e dinâmica. Alguns dos principais exemplos são as funções de pandas: "rename" para ficar de acordo com as colunas
-# do banco de dados, o "concat" para unir as tabelas de devedores tanto de PJ quanto de PF, o "merge" para adicionar da mesma tabela que estavam em
-# arquivos diferntes e o não-uso da coluna "stsRecuperacao" no 004.csv, já que ela não será necessária futuramente para a construção dos métodos de busca.
-# Por último, o "load" (carregamento) dos dados é feito com o pd.to_sql.
-
 import pandas as pd
 from sqlalchemy import create_engine
 import os
 import sys
 from dotenv import load_dotenv
+from datetime import datetime
 
 load_dotenv()
 
-def load_data():
-    """
-    Função principal para executar o pipeline de ETL completo.
-    """
-    try:
-        print("Iniciando pipeline de ETL...")
+# Conexões com os bancos
+DB_USER = os.getenv('DB_USER')
+DB_PASSWORD = os.getenv('DB_PASSWORD')
+DB_HOST = os.getenv('DB_HOST')
+DB_PORT = os.getenv('DB_PORT')
+DB_TRANSACIONAL_NAME = os.getenv('DB_TRANSACIONAL_NAME')
+DB_DW_NAME = os.getenv('DB_DW_NAME')
 
-        db_user = os.getenv('DB_USER')
-        db_password = os.getenv('DB_PASSWORD')
-        db_host = os.getenv('DB_HOST')
-        db_name = os.getenv('DB_NAME')
-        db_port = os.getenv('DB_PORT')
+engine_transacional = create_engine(
+    f'mysql+mysqlconnector://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_TRANSACIONAL_NAME}'
+)
+engine_dw = create_engine(
+    f'mysql+mysqlconnector://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_DW_NAME}'
+)
 
-        if not all([db_user, db_password, db_host, db_name, db_port]):
-            print("Erro: Uma ou mais variáveis de ambiente do banco de dados não estão definidas.")
-            sys.exit(1)
+try:
+    print("=== ETL Iniciado ===")
 
-        connection_string = f'mysql+mysqlconnector://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}'
-        engine = create_engine(connection_string)
+    # Extração (Extract) e transformação (Transform): CSV -> Banco Transacional
+    print("Carregando dados no Transacional...")
 
-        print("Conexão com o banco de dados estabelecida com sucesso.")
+    # CDA com tratamento de datas inválidas (fonte: /data/001.csv)
+    df_cda = pd.read_csv('data/001.csv')
+    df_cda = df_cda.drop_duplicates(subset=['numCDA'], keep='first')
+    if 'datCadastramento' in df_cda.columns:
+        df_cda['datCadastramento'] = pd.to_datetime(df_cda['datCadastramento'], errors='coerce')
+        mask = df_cda['datCadastramento'].dt.year < 1980
+        df_cda.loc[mask, 'datCadastramento'] = pd.to_datetime('1980-01-01 00:00:00.000')
 
-        # Carregar dim_naturezas
-        print("Carregando 'dim_naturezas'...")
-        df_naturezas_bruto = pd.read_csv('data/002.csv').rename(columns={
-        'idNaturezadivida': 'id_natureza_antigo', 
-        'nomnaturezadivida': 'descricao_natureza'
-        })
+    # Naturezas da dívida (fonte: /data/002.csv)  mantém apenas colunas do schema
+    df_nat_raw = pd.read_csv('data/002.csv')[['idNaturezadivida', 'nomnaturezadivida']]
+    df_nat_raw.columns = ['idNaturezaDivida', 'nomNaturezaDivida']  # padroniza nomes como no banco
 
-        #Isso é feito para remover os valores duplicados que tem em naturezas (mesma natureza com IDS diferentes)
-        df_naturezas_mestra = df_naturezas_bruto.drop_duplicates(subset=['descricao_natureza']).copy()
-        df_naturezas_mestra['id_natureza_novo'] = range(1, len(df_naturezas_mestra) + 1) # Cria novos IDs limpos
-        df_naturezas_final = df_naturezas_mestra[['id_natureza_novo', 'descricao_natureza']].rename(columns={'id_natureza_novo': 'id_natureza'})
+    # Normaliza IDs duplicados de naturezas
+    df_nat_unique = df_nat_raw.drop_duplicates(subset=['nomNaturezaDivida']).reset_index(drop=True)
+    df_nat_unique['idNaturezaDivida'] = range(1, len(df_nat_unique) + 1)
+    mapa_ids_natureza = pd.merge(
+        df_nat_raw, df_nat_unique, on='nomNaturezaDivida', suffixes=('_old', '')
+    ).set_index('idNaturezaDivida_old')['idNaturezaDivida'].to_dict()
 
-        # Cria o mapa de IDs antigos para os novos (para conseguir, mais para a frente, mapear a mesma natureza com ids diferentes para o mesmo id novo.)
-        mapa_de_ids = pd.merge(
-            df_naturezas_bruto,
-            df_naturezas_final,
-            on='descricao_natureza'
-        ).set_index('id_natureza_antigo')['id_natureza'].to_dict()
-        df_naturezas_final.to_sql('dim_naturezas', con=engine, if_exists='append', index=False)
-        print("'dim_naturezas' carregada.")
+    # Aplica o mapeamento (ids diferentes que levavam para o mesmo id agora SÃO o mesmo ID)
+    if 'idNaturezaDivida' in df_cda.columns:
+        df_cda['idNaturezaDivida'] = df_cda['idNaturezaDivida'].map(mapa_ids_natureza)
 
-        # Carregar dim_situacoes
-        print("Carregando 'dim_situacoes'...")
-        df_situacoes = pd.read_csv('data/003.csv')
-        df_situacoes = df_situacoes[['codSituacaoCDA', 'nomSituacaoCDA', 'tipoSituacao']].rename(columns={
-            'codSituacaoCDA': 'id_situacao',
-            'nomSituacaoCDA': 'descricao_situacao',
-            'tipoSituacao': 'tipo_situacao'
-        })
-        df_situacoes.drop_duplicates(subset=["id_situacao"], keep = 'first', inplace = True)
-        df_situacoes.to_sql('dim_situacoes', con=engine, if_exists='append', index=False)
-        print("'dim_situacoes' carregada.")
+    df_cda.to_sql('cda', con=engine_transacional, if_exists='append', index=False)
+    df_nat_unique.to_sql('naturezas_divida', con=engine_transacional, if_exists='append', index=False)
 
-        # Carregar dim_devedores
-        print("Carregando 'dim_devedores'...")
-        df_pf = pd.read_csv('data/006.csv')
-        df_pf['tipo_pessoa'] = 'PF'
-        df_pf.rename(columns={'idpessoa': 'id_devedor', 'descNome': 'nome', 'numcpf': 'cpf_cnpj'}, inplace=True)
+    # Situações das CDAs (fonte: /data/003.csv), remove duplicados
+    df_sit_raw = pd.read_csv('data/003.csv')[['codSituacaoCDA', 'nomSituacaoCDA', 'tipoSituacao']]
 
-        df_pj = pd.read_csv('data/007.csv')
-        df_pj['tipo_pessoa'] = 'PJ'
-        df_pj.rename(columns={'idpessoa': 'id_devedor', 'descNome': 'nome', 'numCNPJ': 'cpf_cnpj'}, inplace=True)
+    df_sit_raw.to_sql('situacoes_cda', con=engine_transacional, if_exists='append', index=False)
 
-        df_devedores = pd.concat([df_pf, df_pj], ignore_index=True)
-        df_devedores = df_devedores[['id_devedor', 'nome', 'cpf_cnpj', 'tipo_pessoa']]
-        df_devedores.drop_duplicates(subset=["id_devedor"], keep = 'first', inplace = True)
+    # Probabilidades (fonte: /data/004.csv), remove coluna desnecessária e duplicados
+    df_prob_raw = pd.read_csv('data/004.csv')[['numCDA', 'probRecuperacao']]
+    df_prob_raw = df_prob_raw.drop_duplicates(subset=['numCDA'], keep='first')
+    df_prob_raw.to_sql('probabilidades', con=engine_transacional, if_exists='append', index=False)
 
-        indices_duplicados = df_devedores.duplicated(subset=['cpf_cnpj'], keep='first') & df_devedores['cpf_cnpj'].notna()
-        df_devedores.loc[indices_duplicados, 'cpf_cnpj'] = None
+    # CDA_Devedores (fonte: /data/005.csv)  mantém apenas colunas do schema
+    df_cdadev = pd.read_csv('data/005.csv')[['numCDA', 'idPessoa']]
+    df_cdadev.to_sql('cda_devedores', con=engine_transacional, if_exists='append', index=False)
 
-        # Junta novamente os devedores com CPF/CNPJ únicos e os devedores sem documento
-        df_devedores_final = df_devedores[['id_devedor', 'nome', 'cpf_cnpj', 'tipo_pessoa']]
-        df_devedores_final.to_sql('dim_devedores', con=engine, if_exists='append', index=False)
-        print("'dim_devedores' carregada.")
-        print("Carregando 'fatos_cdas'...")
-        df_fatos_base = pd.read_csv('data/001.csv')
-        df_fatos_prob = pd.read_csv('data/004.csv')
+    # Devedores Pessoa Física (fonte: /data/006.csv)  remove CPFs duplicados e padroniza colunas
+    df_pf = pd.read_csv('data/006.csv')[['idpessoa', 'descNome', 'numcpf']]
+    df_pf = df_pf.drop_duplicates(subset=['idpessoa'], keep='first')  # evita duplicar PK no transacional
+    indices_duplicados = df_pf.duplicated(subset=['numcpf'], keep='first') & df_pf['numcpf'].notna()
+    df_pf.loc[indices_duplicados, 'numcpf'] = None
+    df_pf.columns = ['idPessoa', 'descNome', 'numCPF']  # padroniza nomes para o schema
+    df_pf.to_sql('devedores_pf', con=engine_transacional, if_exists='append', index=False)
 
-        df_fatos_base = pd.read_csv('data/001.csv')
+    # Devedores Pessoa Jurídica (fonte: /data/007.csv)  remove CNPJs duplicados e padroniza colunas
+    df_pj = pd.read_csv('data/007.csv')[['idpessoa', 'descNome', 'numCNPJ']]
+    df_pj = df_pj.drop_duplicates(subset=['idpessoa'], keep='first')  # evita duplicar PK no transacional
+    indices_duplicados = df_pj.duplicated(subset=['numCNPJ'], keep='first') & df_pj['numCNPJ'].notna()
+    df_pj.loc[indices_duplicados, 'numCNPJ'] = None
+    df_pj.columns = ['idPessoa', 'descNome', 'numCNPJ']  # padroniza nomes para o schema
+    df_pj.to_sql('devedores_pj', con=engine_transacional, if_exists='append', index=False)
 
-        df_fatos_base['idNaturezaDivida'] = df_fatos_base['idNaturezaDivida'].map(mapa_de_ids)
 
-        df_fatos = pd.merge(df_fatos_base, df_fatos_prob, on='numCDA')
+    print("Dados carregados no Transacional.")
 
-        df_fatos['datCadastramento'] = pd.to_datetime(df_fatos['datCadastramento'], errors='coerce')
-        df_fatos['DatSituacao'] = pd.to_datetime(df_fatos['DatSituacao'], errors='coerce')
+    # Transformação (Transform) + Carga (Load): Transacional -> DW
+    print("Transformando dados e carregando no DW...")
 
-        mask = df_fatos['datCadastramento'].dt.year < 1980
+    # Naturezas
+    df_nat = pd.read_sql("SELECT * FROM naturezas_divida", engine_transacional).rename(
+        columns={'idNaturezaDivida': 'id_natureza', 'nomNaturezaDivida': 'descricao_natureza'}
+    )
+    df_nat.to_sql('dim_naturezas', con=engine_dw, if_exists='append', index=False)
 
-        df_fatos.loc[mask, 'datCadastramento'] = pd.to_datetime('1980-01-01 00:00:00.000') #Valor padrão, já que o cadastro em 1900 não faz sentido
-        #e provavelmente se trata de um ruído na transmissão daqueles dados, além de causar um erro no SQL.
-        
-        df_fatos = df_fatos.rename(columns={
-            'numCDA': 'num_cda',
-            'anoInscricao': 'ano_inscricao',
-            'datCadastramento': 'data_cadastramento',
-            'DatSituacao': 'data_situacao',
-            'ValSaldo': 'valor_saldo',
-            'probRecuperacao': 'prob_recuperacao',
-            'idNaturezaDivida': 'fk_natureza',
-            'codSituacaoCDA': 'fk_situacao'
-        })
-        df_fatos.drop_duplicates(subset=["num_cda"], keep = 'first', inplace = True)
+    # Situações
+    df_sit = pd.read_sql("SELECT * FROM situacoes_cda", engine_transacional).rename(
+        columns={'codSituacaoCDA': 'id_situacao', 'nomSituacaoCDA': 'descricao_situacao', 'tipoSituacao': 'tipo_situacao'}
+    ).drop_duplicates(subset=['id_situacao'])
+    df_sit.to_sql('dim_situacoes', con=engine_dw, if_exists='append', index=False)
 
-        df_fatos = df_fatos[df_fatos['valor_saldo'] >= 0] #Como é uma análise de dívida ativa, não faz sentido a dívida ser negativa. (isso deu problema no cálculo de montante acumulado)
+    # Devedores PF + PJ
+    df_pf = pd.read_sql("SELECT * FROM devedores_pf", engine_transacional).rename(
+        columns={'idPessoa': 'id_devedor', 'descNome': 'nome', 'numCPF': 'cpf_cnpj'}
+    )
+    df_pf['tipo_pessoa'] = 'PF'
+    df_pj = pd.read_sql("SELECT * FROM devedores_pj", engine_transacional).rename(
+        columns={'idPessoa': 'id_devedor', 'descNome': 'nome', 'numCNPJ': 'cpf_cnpj'}
+    )
+    df_pj['tipo_pessoa'] = 'PJ'
+    df_dev = pd.concat([df_pf, df_pj], ignore_index=True).drop_duplicates(subset=['id_devedor'])
+    df_dev.to_sql('dim_devedores', con=engine_dw, if_exists='append', index=False)
 
-        df_fatos_final = df_fatos[['num_cda', 'ano_inscricao', 'data_cadastramento', 'data_situacao', 'valor_saldo', 'prob_recuperacao', 'fk_natureza', 'fk_situacao']]
-        df_fatos_final.to_sql('fatos_cdas', con=engine, if_exists='append', index=False)
-        print("'fatos_cdas' carregada.")
+    # Fatos CDAs
+    df_cda = pd.read_sql("SELECT * FROM cda", engine_transacional)
+    df_prob = pd.read_sql("SELECT * FROM probabilidades", engine_transacional)
+    df_fatos = pd.merge(df_cda, df_prob, on='numCDA', how='left').rename(columns={
+    'numCDA': 'num_cda',
+    'anoInscricao': 'ano_inscricao',
+    'datCadastramento': 'data_cadastramento',
+    'DatSituacao': 'data_situacao',
+    'ValSaldo': 'valor_saldo',
+    'probRecuperacao': 'prob_recuperacao',
+    'idNaturezaDivida': 'fk_natureza',
+    'codSituacaoCDA': 'fk_situacao'
+    })[
+    ['num_cda', 'ano_inscricao', 'data_cadastramento', 'data_situacao',
+     'valor_saldo', 'prob_recuperacao', 'fk_natureza', 'fk_situacao']
+    ] #Remove a coluna codFaseCobrança, pois nao é útil para o DW
 
-        print("Carregando 'jun_cdas_devedores'...")
-        df_juncao = pd.read_csv('data/005.csv')
-        df_juncao = df_juncao[['numCDA', 'idPessoa']].rename(columns={
-            'numCDA': 'fk_cda',
-            'idPessoa': 'fk_devedor'
-        })
+    df_fatos = df_fatos[df_fatos['valor_saldo'] >= 0]
+    df_fatos.to_sql('fatos_cdas', con=engine_dw, if_exists='append', index=False)
 
-        cdas_validas = df_fatos_final['num_cda'].unique()
-        devedores_validos = df_devedores_final['id_devedor'].unique()
+    # Junção CDA - Devedores
+    df_junc = pd.read_sql("SELECT * FROM cda_devedores", engine_transacional).rename(
+        columns={'numCDA': 'fk_cda', 'idPessoa': 'fk_devedor'}
+    ).drop_duplicates(subset=['fk_cda', 'fk_devedor'])
+    fatos_cd_keys = pd.read_sql("SELECT num_cda FROM fatos_cdas", engine_dw)
+    dev_keys = pd.read_sql("SELECT id_devedor FROM dim_devedores", engine_dw)
+    #Filtra quanto fk_cda e fk_devedor não levam a nenhum CDA ou devedor na tabela fato.
+    #(provavelmente aconteceu por conta de alguma filtragem anterior, como remover CDAs
+    #com saldo negativo ou duplicados
+    df_junc = df_junc[
+    df_junc['fk_cda'].isin(fatos_cd_keys['num_cda']) &
+    df_junc['fk_devedor'].isin(dev_keys['id_devedor'])
+    ]
+    df_junc.to_sql('jun_cdas_devedores', con=engine_dw, if_exists='append', index=False)
 
-        df_juncao = df_juncao[
-            df_juncao['fk_cda'].isin(cdas_validas) &
-            df_juncao['fk_devedor'].isin(devedores_validos)
-        ].drop_duplicates()
+    print("=== ETL concluído com sucesso! ===")
 
-        df_juncao.to_sql('jun_cdas_devedores', con=engine, if_exists='append', index=False)
-        print("'jun_cdas_devedores' carregada.")
-
-        print("\nPipeline de ETL concluído com sucesso!")
-
-    except Exception as e:
-        print(f"Ocorreu um erro durante o pipeline de ETL: {e}")
-        sys.exit(1)
-
-load_data()
+except Exception as e:
+    print(f"Erro no ETL: {e}")
+    sys.exit(1)

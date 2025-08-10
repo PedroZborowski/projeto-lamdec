@@ -1,0 +1,47 @@
+version: "3.9"
+
+services:
+  db_transacional:
+    image: mysql:8
+    container_name: db_transacional
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: transacional
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+    ports:
+      - "3307:3306"
+    volumes:
+      - db_transacional_data:/var/lib/mysql
+      - ./database/criacao_tabelas.sql:/docker-entrypoint-initdb.d/criacao_tabelas.sql
+
+  db_dw:
+    image: mysql:8
+    container_name: db_dw
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: dw
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+    ports:
+      - "3308:3306"
+    volumes:
+      - db_dw_data:/var/lib/mysql
+
+  app:
+    build: .
+    container_name: api_app
+    depends_on:
+      - db_transacional
+      - db_dw
+    environment:
+      DATABASE_URL_TRANSACIONAL: mysql+pymysql://user:password@db_transacional:3306/transacional
+      DATABASE_URL_DW: mysql+pymysql://user:password@db_dw:3306/dw
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+
+volumes:
+  db_transacional_data:
+  db_dw_data:

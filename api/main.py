@@ -16,10 +16,10 @@ load_dotenv()
 DB_USER = os.getenv('DB_USER')
 DB_PASSWORD = os.getenv('DB_PASSWORD')
 DB_HOST = os.getenv('DB_HOST')
-DB_NAME = os.getenv('DB_NAME')
+DB_DW_NAME = os.getenv('DB_DW_NAME')
 DB_PORT = os.getenv('DB_PORT')
 
-DATABASE_URL = f'mysql+mysqlconnector://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}'
+DATABASE_URL = f'mysql+mysqlconnector://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_DW_NAME}'
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -31,8 +31,9 @@ def get_db():
     finally:
         db.close()
 
-# MODELOS DE DADOS (PYDANTIC)
+# Modelos de dados (pydantic)
 # Define a estrutura da resposta JSON para garantir o formato correto.
+# Essa é a sessão do código que lida com type errors (internamente pelo pydantic)
 
 class CdaResponse(BaseModel):
     numCDA: str
@@ -94,8 +95,6 @@ class SaldoResponse(BaseModel):
 
     class Config:
         from_attributes = True
-
-# APLICAÇÃO FASTAPI E ENDPOINT
 
 app = FastAPI()
 
@@ -174,7 +173,7 @@ def search_cda(
         FROM fatos_cdas f
         JOIN dim_naturezas d ON f.fk_natureza = d.id_natureza
     """
-
+    
     # Lista para armazenar as cláusulas WHERE e dicionário para os parâmetros
     where_clauses = []
     params = {}
@@ -244,8 +243,8 @@ def search_cda(
 
 @app.get("/cda/detalhes_devedor", response_model=List[DetalhesResponse])
 def detalhes_devedor(
-    cda: Optional[str] = None,    #Por mais que não esteja especificado no enunciado, detalhes_devedor parece
-    db: Session = Depends(get_db) #se referir a um devedor especifico, portanto, faria sentido poder achá-lo a partir de seu CDA.
+    id_devedor: Optional[int] = None,    #Por mais que não esteja especificado no enunciado, detalhes_devedor parece
+    db: Session = Depends(get_db) #se referir a um devedor especifico, portanto, faria sentido poder achá-lo a partir de seu id_devedor.
 ):
     #DISTINCT para não repetir devedores.
     query_str = """
@@ -256,17 +255,17 @@ def detalhes_devedor(
         FROM jun_cdas_devedores j
         JOIN dim_devedores d ON j.fk_devedor = d.id_devedor
     """
-    if cda:
-        query_str += " WHERE j.fk_cda = :num_cda"
+    if id_devedor is not None:
+        query_str += " WHERE j.fk_devedor = :id_devedor"
 
     try:
-        results = db.execute(text(query_str), {"num_cda": cda}).fetchall()
+        results = db.execute(text(query_str), {"id_devedor": id_devedor}).fetchall()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao consultar o banco de dados: {e}")
     return results
 
 @app.get("/resumo/distribuicao_cdas", response_model=List[DistribuicaoResponse])
-def detalhes_devedor(
+def distribuicao_cdas(
     db: Session = Depends(get_db)
 ):
     #A lógica desse query é setar como 1 e passar para o count, que por padrão ignora os valores Null (que os condicionais
@@ -306,7 +305,7 @@ def detalhes_devedor(
     return results
 
 @app.get("/resumo/inscricoes", response_model=List[InscricoesResponse])
-def detalhes_devedor(
+def inscricoes(
     db: Session = Depends(get_db)
 ):
     query_str = """
@@ -415,7 +414,7 @@ def montante_acumulado(
     return results
 
 @app.get("/resumo/quantidade_cdas", response_model=List[QtdeResponse])
-def detalhes_devedor(
+def quantidade_cdas(
     db: Session = Depends(get_db)
 ):
     query_str = """
@@ -439,7 +438,7 @@ def detalhes_devedor(
     return results
 
 @app.get("/resumo/saldo_cdas", response_model=List[SaldoResponse])
-def detalhes_devedor(
+def saldo_cdas(
     db: Session = Depends(get_db)
 ):
     query_str = """
