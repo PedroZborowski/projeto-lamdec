@@ -3,7 +3,6 @@ from sqlalchemy import create_engine
 import os
 import sys
 from dotenv import load_dotenv
-from datetime import datetime
 
 load_dotenv()
 

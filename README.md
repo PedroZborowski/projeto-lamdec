@@ -7,15 +7,15 @@ Este projeto implementa um pipeline de dados completo para o gerenciamento e an�
 ## 📋 **Índice**
 
   * [Sobre o Projeto](https://www.google.com/search?q=%23-sobre-o-projeto)
-  * [🚀 Tecnologias Utilizadas](https://www.google.com/search?q=%23-tecnologias-utilizadas)
-  * [⚙️ Pré-requisitos](https://www.google.com/search?q=%23-pr%C3%A9-requisitos)
-  * [▶️ Como Executar](https://www.google.com/search?q=%23-como-executar)
-  * [🧪 Como Testar a API](https://www.google.com/search?q=%23-como-testar-a-api)
-  * [🏛️ Arquitetura e Decisões de Design](https://www.google.com/search?q=%23%EF%B8%8F-arquitetura-e-decis%C3%B5es-de-design)
-  * [📂 Estrutura do Repositório](https://www.google.com/search?q=%23-estrutura-do-reposit%C3%B3rio)
-  * [👨‍💻 Autor](https://www.google.com/search?q=%23-autor)
+  * [Tecnologias Utilizadas](https://www.google.com/search?q=%23-tecnologias-utilizadas)
+  * [Pré-requisitos](https://www.google.com/search?q=%23-pr%C3%A9-requisitos)
+  * [▶Como Executar](https://www.google.com/search?q=%23-como-executar)
+  * [Como Testar a API](https://www.google.com/search?q=%23-como-testar-a-api)
+  * [Arquitetura e Decisões de Design](https://www.google.com/search?q=%23%EF%B8%8F-arquitetura-e-decis%C3%B5es-de-design)
+  * [Estrutura do Repositório](https://www.google.com/search?q=%23-estrutura-do-reposit%C3%B3rio)
+  * [Autor](https://www.google.com/search?q=%23-autor)
 
-## 📝 **Sobre o Projeto**
+##  **Sobre o Projeto**
 
 O desafio consiste em desenvolver uma solução de back-end robusta para tratar dados brutos de dívida ativa municipal. As principais etapas do projeto são:
 
@@ -24,7 +24,7 @@ O desafio consiste em desenvolver uma solução de back-end robusta para tratar 
   * [cite\_start]**API (FastAPI):** Desenvolvimento de uma API RESTful com múltiplos endpoints [cite: 21] para consultar tanto dados detalhados quanto resumos e agregações.
   * [cite\_start]**Containerização:** Orquestração de todos os serviços (bancos de dados e API) utilizando Docker e Docker Compose, garantindo um ambiente de execução consistente e facilmente replicável[cite: 19, 160].
 
-## 🚀 **Tecnologias Utilizadas**
+##  **Tecnologias Utilizadas**
 
   * **Banco Transacional:** `PostgreSQL` | `MySQL`
   * **Data Warehouse:** `PostgreSQL` | `MySQL`
@@ -32,14 +32,14 @@ O desafio consiste em desenvolver uma solução de back-end robusta para tratar 
   * **API:** `Python`, `FastAPI`
   * **Containerização:** `Docker`, `Docker Compose`
 
-## ⚙️ **Pré-requisitos**
+##  **Pré-requisitos**
 
 Para executar este projeto, você precisará ter as seguintes ferramentas instaladas em seu sistema:
 
   * **Docker:** [Link para instalação do Docker]
   * **Docker Compose:** [Link para instalação do Docker Compose]
 
-## ▶️ **Como Executar**
+##  **Como Executar**
 
 Siga os passos abaixo para iniciar a aplicação completa:
 
@@ -69,11 +69,11 @@ Siga os passos abaixo para iniciar a aplicação completa:
 
     Você deverá ver os containers dos bancos de dados e da API com o status `Up` ou `running`.
 
-## 🧪 **Como Testar a API**
+##  **Como Testar a API**
 
 Após a execução, a API estará acessível em `http://localhost:8000`. A documentação interativa (Swagger UI) gerada pelo FastAPI está disponível em:
 
-**➡️ [http://localhost:8000/docs](https://www.google.com/search?q=http://localhost:8000/docs)**
+** [http://localhost:8000/docs](https://www.google.com/search?q=http://localhost:8000/docs)**
 
 Abaixo estão alguns exemplos de como testar os endpoints via `curl`:
 
@@ -94,7 +94,7 @@ curl -X GET "http://localhost:8000/cda/search?natureza=IPTU&minSaldo=1000&maxSal
 curl -X GET "http://localhost:8000/resumo/distribuicao_cdas"
 ```
 
-## 🏛️ **Arquitetura e Decisões de Design**
+##  **Arquitetura e Decisões de Design**
 
 Nesta seção, detalho as decisões técnicas e arquiteturais tomadas durante o desenvolvimento do projeto.
 
@@ -117,7 +117,7 @@ Nesta seção, detalho as decisões técnicas e arquiteturais tomadas durante o 
   * **Validação de Dados:** [Mencione o uso do Pydantic. Ex: "Utilizei os `Pydantic models` do FastAPI para realizar a validação automática dos tipos de dados nos parâmetros de consulta (query params), tornando a API mais robusta e segura contra entradas inválidas."]
   * **Performance:** [Se aplicável, mencione otimizações. Ex: "As consultas mais complexas, especialmente nos endpoints de resumo, foram otimizadas com a criação de índices nas colunas mais utilizadas como filtros e `JOINs` no Data Warehouse."]
 
-## 📂 **Estrutura do Repositório**
+##  **Estrutura do Repositório**
 
 ```
 .
@@ -130,7 +130,7 @@ Nesta seção, detalho as decisões técnicas e arquiteturais tomadas durante o 
 └── README.md           # Esta documentação
 ```
 
-## 👨‍💻 **Autor**
+##  **Autor**
 
 Desenvolvido por **[Seu Nome Completo]**.
 

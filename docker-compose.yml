@@ -1,47 +1,67 @@
-version: "3.9"
-
 services:
-  db_transacional:
-    image: mysql:8
-    container_name: db_transacional
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: transacional
-      MYSQL_USER: user
-      MYSQL_PASSWORD: password
-    ports:
-      - "3307:3306"
-    volumes:
-      - db_transacional_data:/var/lib/mysql
-      - ./database/criacao_tabelas.sql:/docker-entrypoint-initdb.d/criacao_tabelas.sql
+  # Serviço do Banco de Dados
+  db:
+    image: mysql:8.0 #Usa a imagem da mysql na versão 8.0
+    restart: always #Reinicia caso caia por algum motivo.
+    environment: #Pega os valores em .env para criar as variáveis de ambiente do container.
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_DATABASE: ${DB_TRANSACIONAL_NAME}
+    ports: #Mapeia a porta 3306 do container à nossa porta escolhida na variável de ambiente
+      - "${DB_HOST_PORT:-3306}:3306"
+    volumes: #A primeira linha cria um volume chamado mysql_data para ter dados persistentes. A segunda injeta o script SQL no banco de dados criado.
+      - mysql_data:/var/lib/mysql
+      - ./database/criacao_tabelas.sql:/docker-entrypoint-initdb.d/init.sql
 
-  db_dw:
-    image: mysql:8
-    container_name: db_dw
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: dw
-      MYSQL_USER: user
-      MYSQL_PASSWORD: password
-    ports:
-      - "3308:3306"
-    volumes:
-      - db_dw_data:/var/lib/mysql
+  #Serviço para executar o pipeline.py
+  etl:
+    build: . #Constrói a imagem a partir do Dockerfile no diretório atual (raiz)
+    image: projeto-lamdec/app:latest
+    env_file: #As variáveis de ambiente são carregadas a partir do arquivo .env
+      - .env
+    depends_on: #O ETL só pode ser executado depois de a condição específica do DB ser verdadeira.
+      - db
 
-  app:
-    build: .
-    container_name: api_app
-    depends_on:
-      - db_transacional
-      - db_dw
-    environment:
-      DATABASE_URL_TRANSACIONAL: mysql+pymysql://user:password@db_transacional:3306/transacional
-      DATABASE_URL_DW: mysql+pymysql://user:password@db_dw:3306/dw
-    ports:
-      - "8000:8000"
-    volumes:
-      - .:/app
+    #O comando a seguir substitui o padrão especificado no Dockerfile. Ele abre um shell e executa um comando que
+    #verifica se a a flag de "já criação" existe. Se não, cria e realiza o ETL. Se sim, pula essa etapa.
+    #Sem isso, o ETL tentaria ser realizado a cada criação ou edição nos containers, e o ETL só deve ser realizado
+    #da primeira vez.
+    #wait-for-it.sh é executado antes dos comandos para garantir que o banco de dados esteja pronto.
+    #Isso evita erros de conexão.
+    command: >
+      sh -c "
+        if [ ! -f /data/persisted/etl_completed.flag ]; then
+          echo 'Flag não encontrada. Executando o pipeline de ETL...'
+          mkdir -p /data/persisted
+          /app/wait-for-it.sh db:3306 --timeout=60 -- python -u etl/pipeline.py && touch /data/persisted/etl_completed.flag
+          echo 'ETL concluído e flag criada.'
+        else
+          echo 'Flag encontrada. Pulando a execução do ETL.'
+        fi
+      "
 
+  # Serviço da API
+  api:
+    build: . #Constrói a imagem a partir do Dockerfile no diretório atual (raiz)
+    image: projeto-lamdec/app:latest
+    restart: always #Reinicia se cair por algum motivo
+    env_file: #As variáveis de ambiente são carregadas a partir do arquivo .env
+      - .env
+    expose: #Expõe a porta 8000 internamente para o ambiente Docker (para ser mapeada usando nginx)
+      - "8000"
+    depends_on: #Só executa quando o ETL completar com exit code 0 (sucesso)
+      etl:
+        condition: service_completed_successfully
+  #O nginx é o reverse proxy e o load balancer da API. Se você quisesse iniciar várias instâncias para
+  #conseguir lidar com o grande fluxo de requisições, você pode, porque o nginx mapeia as portas para você.
+  nginx:
+    image: nginx:latest #Usa a última versão da imagem do nginx
+    ports: #Mapeia a porta 80 do nginx para a 80 do nosso computador (assim, o nginx escuta as requisições na nossa porta http padrão)
+      - "80:80" 
+    volumes: #Mapeia as nossas configurações criadas do nginx para a pasta que o configura.
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+    depends_on: #Espera que a api inicie antes de fazer o mapeamento de portas (para evitar o erro 502: bad gateway)
+      - api
+
+#Cria o volume que vamos utilizar para armazenar os dados do banco de dados mysql.
 volumes:
-  db_transacional_data:
-  db_dw_data:
+  mysql_data:
