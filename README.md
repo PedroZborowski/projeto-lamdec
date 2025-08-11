@@ -50,7 +50,10 @@ Siga os passos abaixo para iniciar a aplicação completa:
 
 2.  **Se você está no windows: convirta o arquivo wait-for-it.sh para o formato de quebra de linha LF**
 
-    Abra o arquivo com o VSCode. Vá para o canto inferior direito, onde está escrito CRLF. Mude para LF.
+    Às vezes, o windows converte automaticamente o padrão de quebra de linha de LF para CRLF ao usar git clone.
+    Se isso acontecer, wait-for-it.sh vai falhar na execução, o ETL não vai rodar, e a API vai acessar o banco de dados
+    vazio. Por favor, verifique se o arquivo está em LF. Você pode fazer isso abrindo o arquivo no VsCode e visualizando
+    o canto inferior direito da tela. Se estiver em CRLF, clique e mude para LF.
 
 3.  **Renomeie e edite o arquivo .env.example:**
     As instruções para essa etapa estão dentro do próprio arquivo.
