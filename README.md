@@ -48,48 +48,41 @@ Siga os passos abaixo para iniciar a aplicação completa:
     cd projeto-lamdec
     ```
 
-2.  **Se você está no windows: convirta o arquivo wait-for-it.sh para o formato de quebra de linha LF**
-
-    Às vezes, o windows converte automaticamente o padrão de quebra de linha de LF para CRLF ao usar git clone.
-    Se isso acontecer, wait-for-it.sh vai falhar na execução, o ETL não vai rodar, e a API vai acessar o banco de dados
-    vazio. Por favor, verifique se o arquivo está em LF. Você pode fazer isso abrindo o arquivo no VsCode e visualizando
-    o canto inferior direito da tela. Se estiver em CRLF, clique e mude para LF.
-
-3.  **Renomeie e edite o arquivo .env.example:**
+2.  **Renomeie e edite o arquivo .env.example:**
     As instruções para essa etapa estão dentro do próprio arquivo.
 
-4.  **IMPORTANTE: Cuidado com a porta 3306**
+3.  **IMPORTANTE: Cuidado com a porta 3306**
     A variável DB_HOST_PORT possui instruções especiais, também no arquivo. Ignorar essa etapa causará erros no banco de dados.
 
-5.  **Inicie os containers:**
+4.  **Inicie os containers:**
     Este comando irá construir as imagens e iniciar todos os serviços em segundo plano (`-d`).
 
     ```bash
     docker compose up --build -d
     ```
 
-6.  **Verifique o status:**
+5.  **Verifique o status:**
     Esse comando mostra o comportamento dos containers.
 
     ```bash
     docker compose ps
     ```
 
-7.  **EXTRA Rodar mais instâncias:**
+6.  **EXTRA Rodar mais instâncias:**
     Você pode alterar a quantidade de instâncias de servidor usando a flag (`--scale`)
 
     ```bash
     docker compose up --scale api=4 -d
     ```
 
-8.  **Parar os containers**
+7.  **Parar os containers**
     Se você quiser parar a execução, você pode usar o seguinte comando:
 
     ```bash
     docker compose down
     ```
 
-9.  **Reiniciar os containers**
+8.  **Reiniciar os containers**
     Para reiniciar é simples: basta usar o comando inicial sem a flag (`--build`)
 
     ```bash
@@ -98,7 +91,7 @@ Siga os passos abaixo para iniciar a aplicação completa:
 
 ##  **Como Testar a API**
 
-Após a execução, a API estará acessível em `http://localhost`. A documentação interativa (Swagger UI) gerada pelo FastAPI está disponível em:
+Enquanto os containers estiverem ativos, a API estará acessível em `http://localhost`. A documentação interativa (Swagger UI) gerada pelo FastAPI está disponível em:
 
 http://localhost/docs
 
