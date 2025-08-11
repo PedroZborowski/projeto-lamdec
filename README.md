@@ -93,7 +93,7 @@ Siga os passos abaixo para iniciar a aplicação completa:
 
 Após a execução, a API estará acessível em `http://localhost`. A documentação interativa (Swagger UI) gerada pelo FastAPI está disponível em:
 
-** [http://localhost/docs]**
+http://localhost/docs
 
 Nesse link, você conseguirá testar os endpoints e requisições a partir de uma interface extremamente intuitiva.
 
