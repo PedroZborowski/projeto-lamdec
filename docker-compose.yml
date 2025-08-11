@@ -42,8 +42,7 @@ services:
 
   # Serviço da API
   api:
-    build: . #Constrói a imagem a partir do Dockerfile no diretório atual (raiz)
-    image: projeto-lamdec/app:latest
+    image: projeto-lamdec/app:latest #Reutiliza a imagem já criada
     restart: always #Reinicia se cair por algum motivo
     env_file: #As variáveis de ambiente são carregadas a partir do arquivo .env
       - .env
