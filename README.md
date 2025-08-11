@@ -60,6 +60,7 @@ Siga os passos abaixo para iniciar a aplicação completa:
     ```bash
     docker compose up --build -d
     ```
+    Aviso: esse processo pode demorar um tempo. Aguarde até que esteja pronto para prosseguir para a próxima instrução.
 
 5.  **Verifique o status:**
     Esse comando mostra o comportamento dos containers.
