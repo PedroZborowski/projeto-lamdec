@@ -48,41 +48,45 @@ Siga os passos abaixo para iniciar a aplicação completa:
     cd projeto-lamdec
     ```
 
-2.  **Renomeie e edite o arquivo .env.example:**
+2.  **Se você está no windows: convirta o arquivo wait-for-it.sh para o formato de quebra de linha LF**
+
+    Abra o arquivo com o VSCode. Vá para o canto inferior direito, onde está escrito CRLF. Mude para LF.
+
+3.  **Renomeie e edite o arquivo .env.example:**
     As instruções para essa etapa estão dentro do próprio arquivo.
 
-3.  **IMPORTANTE: Cuidado com a porta 3306**
+4.  **IMPORTANTE: Cuidado com a porta 3306**
     A variável DB_HOST_PORT possui instruções especiais, também no arquivo. Ignorar essa etapa causará erros no banco de dados.
 
-4.  **Inicie os containers:**
+5.  **Inicie os containers:**
     Este comando irá construir as imagens e iniciar todos os serviços em segundo plano (`-d`).
 
     ```bash
     docker compose up --build -d
     ```
 
-5.  **Verifique o status:**
+6.  **Verifique o status:**
     Esse comando mostra o comportamento dos containers.
 
     ```bash
     docker compose ps
     ```
 
-6.  **EXTRA Rodar mais instâncias:**
+7.  **EXTRA Rodar mais instâncias:**
     Você pode alterar a quantidade de instâncias de servidor usando a flag (`--scale`)
 
     ```bash
     docker compose up --scale api=4 -d
     ```
 
-7.  **Parar os containers**
+8.  **Parar os containers**
     Se você quiser parar a execução, você pode usar o seguinte comando:
 
     ```bash
     docker compose down
     ```
 
-8.  **Reiniciar os containers**
+9.  **Reiniciar os containers**
     Para reiniciar é simples: basta usar o comando inicial sem a flag (`--build`)
 
     ```bash
